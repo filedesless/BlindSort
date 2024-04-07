@@ -21,14 +21,16 @@ fn sorting_permutation(data: &[Cipher]) -> Vec<Cipher> {
 
 /// re-order given array of ciphertexts based on ciphered indices
 fn apply_permutation(data: &[Cipher], permutation: &[Cipher]) -> Vec<Cipher> {
-    let mut out = vec![Cipher::encrypt_trivial(Plain::from(0)); data.len()];
-    for i in 0..data.len() {
-        for j in 0..data.len() {
-            let z = permutation[j].eq(i as u8);
-            out[i] += Cipher::cast_from(z) * &data[j];
-        }
-    }
-    out
+    (0..data.len())
+        .map(|i| {
+            (0..data.len())
+                .map(|j| {
+                    let jtoi = permutation[j].eq(i as Plain);
+                    Cipher::cast_from(jtoi) * &data[j]
+                })
+                .sum::<Cipher>()
+        })
+        .collect()
 }
 
 /// direct sorting algorithm
