@@ -23,3 +23,20 @@ pub fn encrypt_array(data: &[Plain], client_key: &ClientKey) -> Vec<Cipher> {
 pub fn decrypt_array(data: &[Cipher], client_key: &ClientKey) -> Vec<Plain> {
     data.iter().map(|c| c.decrypt(&client_key)).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use tfhe::{prelude::{FheEncrypt, FheOrd}, set_server_key};
+
+    use crate::{cache::read_keys_from_file, timeit, Cipher};
+
+    #[test]
+    pub fn test_lt() {
+        let (client_key, server_key) = read_keys_from_file();
+        set_server_key(server_key);
+        let x = Cipher::encrypt(250u8, &client_key);
+        let y = Cipher::encrypt(251u8, &client_key);
+
+        timeit("lt", || x.lt(&y));
+    }
+}

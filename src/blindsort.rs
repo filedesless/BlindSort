@@ -3,7 +3,7 @@ use tfhe::{
     prelude::{FheEq, FheOrd, FheTrivialEncrypt},
 };
 
-use crate::{Cipher, Plain};
+use crate::{timeit, Cipher, Plain};
 
 /// computes the sorting permutation of a given array of ciphertexts
 fn sorting_permutation(data: &[Cipher]) -> Vec<Cipher> {
@@ -21,6 +21,8 @@ fn sorting_permutation(data: &[Cipher]) -> Vec<Cipher> {
 
 /// re-order given array of ciphertexts based on ciphered indices
 fn apply_permutation(data: &[Cipher], permutation: &[Cipher]) -> Vec<Cipher> {
+    // permutation values outside the 0..data.len() range will be ignored
+    assert_eq!(data.len(), permutation.len());
     (0..data.len())
         .map(|i| {
             (0..data.len())
@@ -36,12 +38,29 @@ fn apply_permutation(data: &[Cipher], permutation: &[Cipher]) -> Vec<Cipher> {
 /// direct sorting algorithm
 pub fn blind_sort(data: &[Cipher]) -> Vec<Cipher> {
     let permutation = sorting_permutation(&data);
-    apply_permutation(&data, &permutation)
+    timeit("blind permutation", || {
+        apply_permutation(&data, &permutation)
+    })
+}
+
+pub fn blind_sort_2bp(data: &[Cipher]) -> Vec<Cipher> {
+    let partially = apply_permutation(&data, &data);
+    let mut cnt = Cipher::encrypt_trivial(Plain::from(0));
+    let permutation = Vec::from_iter(partially.iter().map(|x| {
+        let z = x.eq(0);
+        cnt += Cipher::cast_from(z);
+        x - &cnt
+    }));
+    apply_permutation(&partially, &permutation)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{blindsort::blind_sort, cache::read_keys_from_file, decrypt_array, encrypt_array};
+    use crate::{
+        blindsort::{blind_sort, blind_sort_2bp},
+        cache::read_keys_from_file,
+        decrypt_array, encrypt_array, timeit,
+    };
     use tfhe::set_server_key;
 
     use super::sorting_permutation;
@@ -60,17 +79,35 @@ mod tests {
     }
 
     #[test]
-    fn test_blind_sort() {
+    fn test_blind_sort_ds() {
         let (client_key, server_key) = read_keys_from_file();
         set_server_key(server_key);
-        let data = [5, 7, 3, 2];
+        // let data = [1, 3, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let data = Vec::from_iter(0..32);
         let encrypted = encrypt_array(&data, &client_key);
 
-        let sorted = blind_sort(&encrypted);
+        let sorted = timeit("blind_sort", || blind_sort(&encrypted));
 
         let decrypted = decrypt_array(&sorted, &client_key);
         let mut data = data;
         data.sort();
+        assert_eq!(decrypted, data);
+    }
+
+    #[test]
+    fn test_blind_sort_2bp() {
+        let (client_key, server_key) = read_keys_from_file();
+        set_server_key(server_key);
+        // let data = [1, 3, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let data = Vec::from_iter(0..32);
+        let encrypted = encrypt_array(&data, &client_key);
+
+        let sorted = timeit("blind_sort", || blind_sort_2bp(&encrypted));
+
+        let decrypted = decrypt_array(&sorted, &client_key);
+        let mut data = data;
+        data.sort();
+        data.rotate_left(1);
         assert_eq!(decrypted, data);
     }
 }
