@@ -1,6 +1,6 @@
 use tfhe::{
     core_crypto::commons::traits::CastFrom,
-    prelude::{FheEq, FheOrd, FheTrivialEncrypt},
+    prelude::{FheEq, FheMax, FheMin, FheOrd, FheTrivialEncrypt},
 };
 
 use crate::{timeit, Cipher, Plain};
@@ -54,16 +54,39 @@ pub fn blind_sort_2bp(data: &[Cipher]) -> Vec<Cipher> {
     apply_permutation(&partially, &permutation)
 }
 
+pub fn blind_sort_simple(data: &mut [Cipher]) {
+    for i in 0..data.len() {
+        for j in 0..i {
+            let min: Cipher = data[i].min(&data[j]);
+            let max: Cipher = data[i].max(&data[j]);
+            data[i] = max;
+            data[j] = min;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{
-        blindsort::{blind_sort, blind_sort_2bp},
-        cache::read_keys_from_file,
-        decrypt_array, encrypt_array, timeit,
-    };
+    use crate::{cache::read_keys_from_file, decrypt_array, encrypt_array};
     use tfhe::set_server_key;
 
-    use super::sorting_permutation;
+    use super::*;
+
+    #[test]
+    fn test_blind_sort_simple() {
+        let (client_key, server_key) = read_keys_from_file();
+        set_server_key(server_key);
+        let data = Vec::from_iter((0..16).rev());
+        let mut encrypted = encrypt_array(&data, &client_key);
+
+        timeit("simple sort", || blind_sort_simple(&mut encrypted));
+
+        let decrypted = decrypt_array(&encrypted, &client_key);
+        println!("{:?}", decrypted);
+        let mut expected = data;
+        expected.sort();
+        assert_eq!(decrypted, expected);
+    }
 
     #[test]
     fn test_sorting_permutation() {

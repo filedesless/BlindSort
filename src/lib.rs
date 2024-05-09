@@ -8,7 +8,7 @@ use tfhe::{prelude::{FheDecrypt, FheEncrypt}, ClientKey, FheUint8};
 pub type Plain = u8;
 pub type Cipher = FheUint8;
 
-pub fn timeit<F: Fn() -> T, T>(name: &str, f: F) -> T {
+pub fn timeit<F: FnOnce() -> T, T>(name: &str, f: F) -> T {
     let begin = Instant::now();
     let result = f();
     let elapsed = Instant::now() - begin;
