@@ -3,7 +3,7 @@ use tfhe::{
     prelude::{FheEq, FheMax, FheMin, FheOrd, FheTrivialEncrypt},
 };
 
-use crate::{timeit, Cipher, Plain};
+use crate::{Cipher, Plain};
 
 /// computes the sorting permutation of a given array of ciphertexts
 fn sorting_permutation(data: &[Cipher]) -> Vec<Cipher> {
@@ -36,14 +36,15 @@ fn apply_permutation(data: &[Cipher], permutation: &[Cipher]) -> Vec<Cipher> {
 }
 
 /// direct sorting algorithm
-pub fn blind_sort(data: &[Cipher]) -> Vec<Cipher> {
+/// from Cetin, 2015. Depth Optimized Efficient Homomorphic Sorting
+pub fn direct_sort(data: &[Cipher]) -> Vec<Cipher> {
     let permutation = sorting_permutation(&data);
-    timeit("blind permutation", || {
-        apply_permutation(&data, &permutation)
-    })
+    apply_permutation(&data, &permutation)
 }
 
-pub fn blind_sort_2bp(data: &[Cipher]) -> Vec<Cipher> {
+/// 2bp sorting algorithm
+/// using TFHE high level API instead of RevoLUT
+pub fn double_blind_permutation(data: &[Cipher]) -> Vec<Cipher> {
     let partially = apply_permutation(&data, &data);
     let mut cnt = Cipher::encrypt_trivial(Plain::from(0));
     let permutation = Vec::from_iter(partially.iter().map(|x| {
@@ -54,20 +55,50 @@ pub fn blind_sort_2bp(data: &[Cipher]) -> Vec<Cipher> {
     apply_permutation(&partially, &permutation)
 }
 
-pub fn blind_sort_simple(data: &mut [Cipher]) {
-    for i in 0..data.len() {
+/// simplest sorting algorithm
+pub fn simple_sort(data: &[Cipher]) -> Vec<Cipher> {
+    let mut result = data.to_vec();
+    for i in 0..result.len() {
         for j in 0..i {
-            let min: Cipher = data[i].min(&data[j]);
-            let max: Cipher = data[i].max(&data[j]);
-            data[i] = max;
-            data[j] = min;
+            let min: Cipher = result[i].min(&result[j]);
+            let max: Cipher = result[i].max(&result[j]);
+            result[i] = max;
+            result[j] = min;
         }
     }
+    result
+}
+
+/// bitonic sort
+/// a data-oblivious sorting network
+pub fn bitonic_sort(data: &[Cipher]) -> Vec<Cipher> {
+    let n = data.len(); // must be a power of 2
+    let mut result = data.to_vec();
+    let mut k = 2;
+    while k <= n {
+        let mut j = k >> 1;
+        while j > 0 {
+            for i in 0..n {
+                let l = i ^ j;
+                if l > i {
+                    let min: Cipher = result[i].min(&result[l]);
+                    let max: Cipher = result[i].max(&result[l]);
+                    let (a, b) = if i & k == 0 { (i, l) } else { (l, i) };
+                    result[a] = min;
+                    result[b] = max;
+                }
+            }
+            j >>= 1;
+        }
+        k <<= 1;
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{cache::read_keys_from_file, decrypt_array, encrypt_array};
+    use itertools::Itertools;
     use tfhe::set_server_key;
 
     use super::*;
@@ -77,11 +108,11 @@ mod tests {
         let (client_key, server_key) = read_keys_from_file();
         set_server_key(server_key);
         let data = Vec::from_iter((0..16).rev());
-        let mut encrypted = encrypt_array(&data, &client_key);
+        let encrypted = encrypt_array(&data, &client_key);
 
-        timeit("simple sort", || blind_sort_simple(&mut encrypted));
+        let sorted = simple_sort(&encrypted);
 
-        let decrypted = decrypt_array(&encrypted, &client_key);
+        let decrypted = decrypt_array(&sorted, &client_key);
         println!("{:?}", decrypted);
         let mut expected = data;
         expected.sort();
@@ -109,7 +140,7 @@ mod tests {
         let data = Vec::from_iter(0..32);
         let encrypted = encrypt_array(&data, &client_key);
 
-        let sorted = timeit("blind_sort", || blind_sort(&encrypted));
+        let sorted = direct_sort(&encrypted);
 
         let decrypted = decrypt_array(&sorted, &client_key);
         let mut data = data;
@@ -125,12 +156,30 @@ mod tests {
         let data = Vec::from_iter(0..32);
         let encrypted = encrypt_array(&data, &client_key);
 
-        let sorted = timeit("blind_sort", || blind_sort_2bp(&encrypted));
+        let sorted = double_blind_permutation(&encrypted);
 
         let decrypted = decrypt_array(&sorted, &client_key);
         let mut data = data;
         data.sort();
         data.rotate_left(1);
         assert_eq!(decrypted, data);
+    }
+
+    #[test]
+    fn test_bitonic_sort() {
+        let (client_key, server_key) = read_keys_from_file();
+        set_server_key(server_key);
+        for data in (0..4).permutations(4) {
+            println!("data: {:?}", data);
+            let encrypted = encrypt_array(&data, &client_key);
+
+            let sorted = bitonic_sort(&encrypted);
+
+            let decrypted = decrypt_array(&sorted, &client_key);
+            println!("decrypted: {:?}", decrypted);
+            let mut expected = data;
+            expected.sort();
+            assert_eq!(decrypted, expected);
+        }
     }
 }
