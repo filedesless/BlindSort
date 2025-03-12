@@ -12,11 +12,11 @@ use tfhe::{
     prelude::{FheDecrypt, FheEncrypt},
     set_server_key,
     shortint::parameters::*,
-    ClientKey, FheUint8,
+    ClientKey, FheUint16, FheUint32, FheUint8,
 };
 
-pub type Plain = u8;
-pub type Cipher = FheUint8;
+pub type Plain = u32;
+pub type Cipher = FheUint32;
 
 pub fn bench_revolut<F: Fn(&PublicKey, LUT, &Context) -> T, T>(name: &str, f: F) {
     bench_revolut_upto(name, f, 7usize)
@@ -28,6 +28,8 @@ pub fn bench_revolut_upto<F: Fn(&PublicKey, LUT, &Context) -> T, T>(name: &str, 
         PARAM_MESSAGE_3_CARRY_0,
         PARAM_MESSAGE_4_CARRY_0,
         PARAM_MESSAGE_5_CARRY_0,
+        PARAM_MESSAGE_6_CARRY_0,
+        PARAM_MESSAGE_7_CARRY_0,
     ];
 
     print!("{}", name);
@@ -51,11 +53,11 @@ pub fn bench_revolut_upto<F: Fn(&PublicKey, LUT, &Context) -> T, T>(name: &str, 
 pub fn bench<F: Fn(&[Cipher]) -> T, T>(name: &str, f: F) {
     let (client_key, server_key) = read_keys_from_file();
     set_server_key(server_key);
-    let data = encrypt_array(&Vec::from_iter(0..32), &client_key);
+    let data = encrypt_array(&Vec::from_iter(0..=0xff), &client_key);
 
     print!("{}", name);
     let _ = io::stdout().flush();
-    for n in (2..=5).map(|i| 2u8.pow(i) as usize) {
+    for n in (2..=8).map(|i| 2u64.pow(i) as usize) {
         let begin = Instant::now();
         f(&data[..n]);
         let elapsed = Instant::now() - begin;

@@ -7,7 +7,7 @@ use crate::{Cipher, Plain};
 
 /// computes the sorting permutation of a given array of ciphertexts
 fn sorting_permutation(data: &[Cipher]) -> Vec<Cipher> {
-    let mut out = vec![Cipher::encrypt_trivial(Plain::from(0)); data.len()];
+    let mut out = vec![Cipher::encrypt_trivial(Plain::from(0 as Plain)); data.len()];
     for i in 0..data.len() {
         for j in 0..i {
             let z = data[i].gt(&data[j]);
@@ -46,7 +46,7 @@ pub fn direct_sort(data: &[Cipher]) -> Vec<Cipher> {
 /// using TFHE high level API instead of RevoLUT
 pub fn double_blind_permutation(data: &[Cipher]) -> Vec<Cipher> {
     let partially = apply_permutation(&data, &data);
-    let mut cnt = Cipher::encrypt_trivial(Plain::from(0));
+    let mut cnt = Cipher::encrypt_trivial(Plain::from(0 as Plain));
     let permutation = Vec::from_iter(partially.iter().map(|x| {
         let z = x.eq(0);
         cnt += Cipher::cast_from(z);
